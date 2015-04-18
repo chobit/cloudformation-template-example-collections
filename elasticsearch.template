@@ -1,0 +1,294 @@
+{
+  "AWSTemplateFormatVersion" : "2010-09-09",
+
+  "Description" : "CloudFormation template for ElasticSearch",
+
+  "Parameters" : {
+
+    "KeyName": {
+      "Description" : "Elasticsearch service key name",
+      "Type": "String",
+      "MinLength": "1",
+      "MaxLength": "255",
+      "AllowedPattern" : "[\\x20-\\x7E]*",
+      "ConstraintDescription" : "KeyPair name from 1 to 255 ASCII characters.",
+      "Default": "elasticsearch"
+    },
+    "VpcId" : {
+      "Description" : "The ID of the VPC to use.",
+      "Type" : "String",
+      "Default" : "vpc-b1b297d4"
+    },
+
+    "PrivateSubnet1" : {
+        "Description": "Private subnet 1 ID",
+        "Type": "String",
+        "Default": "subnet-fc4bf7d7"
+    },
+    "PrivateSubnet2" : {
+        "Description": "Private subnet 2 ID",
+        "Type": "String",
+        "Default": "subnet-66a8de11"
+    },
+    "InstanceType" : {
+      "Description" : "Elasticsearch node instance type",
+      "Type" : "String",
+      "Default" : "t2.micro",
+      "AllowedValues" : [ "t2.micro", "m1.small", "m1.medium", "m1.large", "m1.xlarge", "m3.medium", "m3.large", "m3.xlarge", "m3.2xlarge", "c1.medium", "c1.xlarge", "c3.large", "c3.xlarge", "c3.2xlarge", "c3.4xlarge", "c3.8xlarge", "cc2.8xlarge", "m2.xlarge", "m2.2xlarge", "m2.4xlarge", "r3.large", "r3.xlarge", "r3.2xlarge", "r3.4xlarge", "r3.8xlarge", "cr1.8xlarge", "hi1.4xlarge", "hs1.8xlarge", "i2.xlarge", "i2.2xlarge", "i2.4xlarge", "i2.8xlarge"],
+      "ConstraintDescription" : "Must be a valid Amazon EC2 instance type."
+    },
+
+    "SSHLocation" : {
+      "Description" : "The range of IP addresses with access to SSH into the instances",
+      "Type": "String",
+      "MinLength": "9",
+      "MaxLength": "18",
+      "Default": "0.0.0.0/0",
+      "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})",
+      "ConstraintDescription": "Must be a valid IP CIDR range of the form x.x.x.x/x."
+    },
+
+    "ElasticsearchClusterName" : {
+      "Description" : "The name of the Elasticsearch cluster",
+      "Type" : "String",
+      "Default" : "elasticsearch"
+    },
+
+    "ClusterSize" : {
+      "Description" : "The number of Elasticsearch instances to launch in the Auto Scaling group",
+      "Type" : "Number",
+      "Default" : "1"
+    },
+
+    "ElasticsearchVersion" : {
+      "Description" : "The version number of Elasticsearch used throughout the application",
+      "Type" : "String",
+      "Default" : "0.90.11",
+      "AllowedValues" : [ "0.90.11", "1.0.0", "1.2.1"],
+      "ConstraintDescription" : "Must be a supported version number."
+    }
+
+  },
+  "Mappings" : {
+    "AWSInstanceType2Arch" : {
+      "t2.micro"     : { "Arch" : "64HVM" },
+      "m3.medium"    : { "Arch" : "64HVM" },
+      "m3.large"     : { "Arch" : "64HVM" },
+      "m3.xlarge"    : { "Arch" : "64HVM" },
+      "m3.2xlarge"   : { "Arch" : "64HVM" },
+      "c3.large"     : { "Arch" : "64HVM" },
+      "c3.xlarge"    : { "Arch" : "64HVM" },
+      "c3.2xlarge"   : { "Arch" : "64HVM" },
+      "c3.4xlarge"   : { "Arch" : "64HVM" },
+      "c3.8xlarge"   : { "Arch" : "64HVM" }
+    },
+    "AWSRegionArch2AMI" : {
+      "us-east-1"      : { "64HVM" : "ami-1ecae776" }
+    },
+    "ElasticsearchVersion2ServiceWrapperVersion" : {
+      "0.90.11" : { "Ver" : "0.90"},
+      "1.0.0"   : { "Ver" : "master"},
+      "1.2.1"   : { "Ver" : "master"}
+    },
+    "ElasticsearchVersion2ServiceWrapperHash" : {
+      "0.90.11" : { "Hash" : "303e94d" },
+      "1.0.0"   : { "Hash" : "4943d5a" },
+      "1.2.1"   : { "Hash" : "4943d5a" }
+    },
+    "ElasticsearchVersion2AWSCloudPluginVersion" : {
+      "0.90.11" : { "Ver" : "1.16.0" },
+      "1.0.0"   : { "Ver" : "2.0.0.RC1" },
+      "1.2.1"   : { "Ver" : "2.2.0" }
+    }
+  },
+
+  "Resources" : {
+    "ElasticsearchDiscoveryRole" : {
+      "Type" : "AWS::IAM::Role",
+      "Properties" : {
+        "AssumeRolePolicyDocument" : {
+          "Version" : "2012-10-17",
+          "Statement" : [ {
+            "Effect" : "Allow",
+            "Principal" : {
+              "Service" : [ "ec2.amazonaws.com" ]
+            },
+            "Action" : [ "sts:AssumeRole" ]
+          } ]
+        },
+        "Path" : "/"
+      }
+    },
+
+    "ElasticsearchRolePolicies" : {
+      "Type" : "AWS::IAM::Policy",
+      "Properties" : {
+        "PolicyName" : "esdicovery",
+        "PolicyDocument": {
+          "Version" : "2012-10-17",
+          "Statement": [ {
+              "Effect": "Allow",
+              "Action": "ec2:Describe*",
+              "Resource": "*"
+          } ]
+        },
+        "Roles": [ { "Ref": "ElasticsearchDiscoveryRole" } ]
+      }
+    },
+
+    "ElasticsearchInstanceProfile" : {
+      "Type": "AWS::IAM::InstanceProfile",
+      "Properties": {
+        "Path": "/",
+        "Roles": [ { "Ref": "ElasticsearchDiscoveryRole" } ]
+      }
+    },
+
+    "ElasticsearchServerGroup" : {
+      "Type" : "AWS::AutoScaling::AutoScalingGroup",
+      "UpdatePolicy" : {
+        "AutoScalingRollingUpdate" : {
+            "MaxBatchSize": "1",
+            "MinInstancesInService" : "3"
+         }
+      },
+      "Properties" : {
+        "AvailabilityZones" : [
+          "us-east-1a", "us-east-1b"
+        ],
+        "VPCZoneIdentifier" : [
+            { "Ref": "PrivateSubnet1" },
+            { "Ref": "PrivateSubnet2" }
+        ],
+        "LaunchConfigurationName" : { "Ref" : "ElasticsearchServer" },
+        "MinSize" : "1",
+        "MaxSize" : "10",
+        "DesiredCapacity" : { "Ref" : "ClusterSize" },
+        "Tags" : [ { 
+            "Key" : "type", "Value" : "elasticsearch", "PropagateAtLaunch" : "true" 
+            }, {
+            "Key" : "Name", "Value" : { "Ref" : "ElasticsearchClusterName" }, "PropagateAtLaunch" : "true"
+            }, {
+            "Key" : "project", "Value" : "cloudformation", "PropagateAtLaunch" : "true"
+            }
+         ]
+      }
+    },
+
+    "ElasticsearchServer": {
+      "Type": "AWS::AutoScaling::LaunchConfiguration",
+
+      "Metadata" : {
+        "AWS::CloudFormation::Init" : {
+          "config" : {
+            "commands" : {
+              "createfile" : {
+                "command" : { "Fn::Join" : ["", [
+                  "echo \"",
+                  "cloud.aws.region:\n",
+                  " ", { "Ref" : "AWS::Region" }, "\n",
+                  "discovery:\n",
+                  " type: ec2\n",
+                  "\n",
+                  "discovery.ec2.groups: ", { "Ref" : "ElasticsearchSecurityGroup" }, "\n",
+                  "discovery.ec2.tag.type: elasticsearch\n",
+                  "\n",
+                  "cloud.node.auto_attributes: true\n",
+                  " \" > ",
+                  "/usr/local/elasticsearch/elasticsearch-", { "Ref" : "ElasticsearchVersion"  }, "/config/elasticsearch.yml"
+                ]]}
+              }
+            }
+          }
+        }
+      },
+
+      "Properties": {
+        "ImageId" : { "Fn::FindInMap" : [ "AWSRegionArch2AMI", { "Ref" : "AWS::Region" }, { "Fn::FindInMap" : [ "AWSInstanceType2Arch", { "Ref" : "InstanceType" }, "Arch" ] } ] },
+        "InstanceType"   : { "Ref" : "InstanceType" },
+        "SecurityGroups" : [ {"Ref" : "ElasticsearchSecurityGroup"} ],
+        "KeyName"        : { "Ref" : "KeyName" },
+        "IamInstanceProfile" : { "Ref" : "ElasticsearchInstanceProfile" },
+        "UserData"       : { "Fn::Base64" : { "Fn::Join" : ["", [
+          "#!/bin/bash\n",
+          "yum update -y aws-cfn-bootstrap\n",
+
+          "# Helper function\n",
+          "function error_exit\n",
+          "{\n",
+          "  /opt/aws/bin/cfn-signal -e 1 -r \"$1\" '", { "Ref" : "WaitHandle" }, "'\n",
+          "  exit 1\n",
+          "}\n",
+
+          "# Install application\n",
+          "#/opt/aws/bin/cfn-init -s ", { "Ref" : "AWS::StackId" }, " -r ElasticsearchServer ",
+          "#    --region ", { "Ref" : "AWS::Region" }, "\n",
+
+          "# Add Elasticsearch repo key\n",
+          "rpm --import https://packages.elasticsearch.org/GPG-KEY-elasticsearch\n",
+
+          "# Create  /etc/yum.repos.d/elasticsearch.repo\n",
+          "bash -c 'cat > /etc/yum.repos.d/elasticsearch.repo' <<-EOF\n",
+          "[elasticsearch-1.4]\n",
+          "name=Elasticsearch repository for 1.4.x packages\n",
+          "baseurl=http://packages.elasticsearch.org/elasticsearch/1.4/centos\n",
+          "gpgcheck=1\n",
+          "gpgkey=http://packages.elasticsearch.org/GPG-KEY-elasticsearch\n",
+          "enabled=1\n",
+          "EOF\n",
+
+          "# Install Elasticsearch\n",
+          "yum install -y elasticsearch\n",
+
+          "# Start Elasticsearch\n",
+          "service elasticsearch start\n",
+
+          "# Install ES aws cloud plugin\n",
+          "cd /usr/share/elasticsearch\n",
+          "bin/./plugin install elasticsearch/elasticsearch-cloud-aws/2.4.1\n",
+
+          "# Configure elasticsearch.yml\n",
+          "sed -i.org -e 's/#cluster\\.name.*/cluster.name: elasticsearch-2/g' /etc/elasticsearch/elasticsearch.yml\n",
+          "bash -c 'cat >> /etc/elasticsearch/elasticsearch.yml' <<-EOF\n",
+          "discovery.type: ec2\n",
+          "discovery.zen.ping.multicast.enabled: false\n",
+          "discovery.ec2.tag.type: elasticsearch\n",
+          "discovery.ec2.tag.project: cloudformation\n",
+          "EOF\n",
+
+          "# Restart elasticsearch\n",
+          "service elasticsearch restart\n",
+
+          "# All is well so signal success\n",
+          "/opt/aws/bin/cfn-signal -e $? '", { "Ref" : "WaitHandle" }, "'\n"
+        ]]}}
+      }
+    },
+
+    "WaitHandle" : {
+      "Type" : "AWS::CloudFormation::WaitConditionHandle"
+    },
+
+    "WaitCondition" : {
+      "Type" : "AWS::CloudFormation::WaitCondition",
+      "DependsOn" : "ElasticsearchServer",
+      "Properties" : {
+        "Handle" : {"Ref" : "WaitHandle"},
+        "Timeout" : "600"
+      }
+    },
+
+    "ElasticsearchSecurityGroup" : {
+      "Type" : "AWS::EC2::SecurityGroup",
+      "Properties" : {
+        "GroupDescription" : "Enable Elasticsearch access",
+        "VpcId" : { "Ref" : "VpcId" },
+        "SecurityGroupIngress" : [
+          {"IpProtocol" : "tcp", "FromPort" : "9200", "ToPort" : "9200", "CidrIp" : "0.0.0.0/0"},
+          {"IpProtocol" : "tcp", "FromPort" : "9300", "ToPort" : "9300", "CidrIp" : "0.0.0.0/0"},
+          {"IpProtocol" : "tcp", "FromPort" : "22", "ToPort" : "22", "CidrIp" : { "Ref" : "SSHLocation"}}
+        ]
+      }
+    }
+  }
+}
