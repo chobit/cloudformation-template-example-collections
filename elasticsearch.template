@@ -12,7 +12,7 @@
       "MaxLength": "255",
       "AllowedPattern" : "[\\x20-\\x7E]*",
       "ConstraintDescription" : "KeyPair name from 1 to 255 ASCII characters.",
-      "Default": "elasticsearch"
+      "Default": "platform-ssh-key"
     },
     "VpcId" : {
       "Description" : "The ID of the VPC to use.",
